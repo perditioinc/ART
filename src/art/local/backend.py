@@ -148,7 +148,7 @@ class LocalBackend(Backend):
         # Default to step 0 when not specified (the initial checkpoint created at registration)
         if step is not None:
             actual_step = step
-        elif model.name in self._services:
+        elif model.name in self._services and self._in_process:
             # In dedicated mode the service tracks which adapter vLLM has
             # actually loaded.  Reading the filesystem would race: the
             # checkpoint directory appears before the HTTP reload completes.
@@ -294,14 +294,18 @@ class LocalBackend(Backend):
         steps_to_keep: list[int],
     ) -> None:
         """Delete checkpoint files, keeping only the specified steps."""
-        from ..tinker.service import TinkerService
 
         output_dir = get_model_dir(model=model, art_path=self._path)
         service = await self._get_service(model)
-        if isinstance(service, TinkerService):
-            await service.delete_checkpoints(steps_to_keep)
-        else:
-            delete_checkpoints(output_dir, steps_to_keep)
+        try:
+            from ..tinker.service import TinkerService
+
+            if isinstance(service, TinkerService):
+                await service.delete_checkpoints(steps_to_keep)
+                return
+        except ImportError:
+            pass
+        delete_checkpoints(output_dir, steps_to_keep)
 
     async def _prepare_backend_for_training(
         self,
